@@ -1,0 +1,100 @@
+psql
+\c cdms
+\i 'D:/cdms_migrate_13062025/cdms_migrate_13062025.sql'
+
+postgres=# \dconfig *archive*
+                     List of configuration parameters
+               Parameter                |              Value
+----------------------------------------+---------------------------------
+ archive_cleanup_command                |
+ archive_command                        | copy "%p" "C:\\archive_dir\\%f"
+ archive_library                        |
+ archive_mode                           | on
+ archive_timeout                        | 0
+ edb_audit_archiver                     | off
+ edb_audit_archiver_compress_command    | gzip %p
+ edb_audit_archiver_compress_size_limit | -1
+ edb_audit_archiver_compress_suffix     | .gz
+ edb_audit_archiver_compress_time_limit | -1
+ edb_audit_archiver_expire_command      |
+ edb_audit_archiver_expire_size_limit   | -1
+ edb_audit_archiver_expire_time_limit   | -1
+ edb_audit_archiver_filename_prefix     | audit-
+ edb_audit_archiver_sort_file           | mtime
+ edb_audit_archiver_timeout             | 5min
+ max_standby_archive_delay              | 30s
+(17 rows)
+
+--cmd--
+
+C:\Program Files\edb\as15\bin
+psql -U postgres -p 5434 
+
+
+##check search path is added or not 
+show SHOW search_path;
+
+SET search_path TO cdms_schema, public;
+ALTER ROLE postgres SET search_path TO cdms_schema, public;
+
+=archive%
+postgres=# select name,setting from pg_settings where name like 'archive%' ;
+
+
+postgres=# alter system set archive_mode=on;
+ALTER SYSTEM
+alter system set archive_command='test ! -f C:\archive_dir\%f && cp %p C:\archive_dir\%f';
+####postgresql.auto.conf file
+archive_mode = 'on'
+archive_command = 'copy "%p" "C:\\\\archive_dir\\\\%f"'
+wal_level = 'replica'
+
+SELECT * FROM pg_stat_archiver;
+
+--take a base backup
+pg_basebackup -D "C:\pgbackups" -F p -X fetch -P -U postgres
+
+
+========check wal status 
+SELECT pg_last_wal_replay_lsn(), pg_last_xact_replay_timestamp();
+
+
+C:\Program Files\edb\as15\bin>"C:\Program Files\edb\as15\bin\pg_basebackup.exe" -D "C:\pgbackup" -F p -v -X fetch -P -U postgres -p 5434
+
+
+----
+####----------Inside your postgresql.conf, you might have:
+
+restore_command = 'cmd /c copy "C:\\archive_dir\\%f" "%p"'
+recovery_target_time = '2025-10-30 16:00:00'
+
+
+
+restore_command = 'copy "C:\\archive_dir\\%f" "%p"'		# command to use to restore an archived logfile segment
+				# placeholders: %p = path of file to restore
+				#               %f = file name only
+				# e.g. 'cp /mnt/server/archivedir/%f %p'
+
+
+recovery_target_timeline = 'latest'	# 'current', 'latest', or timeline ID
+				# (change requires restart)
+#recovery_target_action = 'pause'	# 'pause', 'promote', 'shutdown'
+				# (change requires restart)
+
+
+--using powershell
+New-Item "C:\pgbackup\recovery.signal" -ItemType File
+
+# SELECT * FROM pg_control_checkpoint();
+
+restore_command = 'copy "C:\\archive_dir\\%f" "%p"'
+recovery_target_time = '2025-10-30 12:55:00'  # <-- your target time
+
+
+
+select pg_wal_replay_resume();
+
+
+insert into posts (id, title, content, type) values
+(104, 'Intro to SQL Where Clause', 'Easy as pie!', 'SQL'),
+(105, 'Intro to SQL Order Clause', 'What comes first?', 'SQL');

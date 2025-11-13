@@ -1,0 +1,396 @@
+
+
+https://pgdash.io/blog/incremental-backup-in-postgresql-17.html
+
+
+
+
+psql (17devel)
+Type "help" for help.
+
+postgres=# show summarize_wal;
+ summarize_wal
+---------------
+ off
+(1 row)
+
+postgres=# alter system set summarize_wal = 'on';
+ALTER SYSTEM
+postgres=# select pg_reload_conf();
+ pg_reload_conf
+----------------
+ t
+(1 row)
+
+postgres=# show summarize_wal;
+ summarize_wal
+---------------
+ on
+(1 row)
+
+postgres=#
+Chan
+pg_basebackup -U postgres -p 5433 -D "C:\pg_backup\full" --write-recovery-conf --checkpoint=fast
+PS D:\edbpg17\bin> .\pg_basebackup.exe -U postgres -p 5433 -D "C:\pg_backup\full" --verbose --write-recovery-conf --checkpoint=fast
+
+
+
+---incremental backup 
+.\pg_basebackup.exe -U postgres -p 5433 -D "C:\pg_backup\incr1" -i "C:\pg_backup\full\backup_manifest" --verbose -c fast --verbose
+
+
+
+
+
+
+
+
+
+
+
+
+
+PS D:\edbpg17\bin> New-Item -ItemType Directory -Path "C:\pg_backup\backup1"         # Full backup
+
+
+    Directory: C:\pg_backup
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----        12-11-2025     17:52                backup1
+
+
+PS D:\edbpg17\bin> New-Item -ItemType Directory -Path "C:\pg_backup\backup2_full"    # Second full backup (optional)
+
+
+    Directory: C:\pg_backup
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----        12-11-2025     17:52                backup2_full
+
+
+PS D:\edbpg17\bin> New-Item -ItemType Directory -Path "C:\pg_backup\backup2_incr"    # Incremental backup
+
+
+    Directory: C:\pg_backup
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----        12-11-2025     17:52                backup2_incr
+
+
+PS D:\edbpg17\bin> New-Item -ItemType Directory -Path "C:\pg_backup\restore2"        # Restore target
+
+
+    Directory: C:\pg_backup
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d-----        12-11-2025     17:52                restore2
+
+
+
+
+PS D:\edbpg17\bin> .\pg_basebackup.exe -U postgres -p 5433 -D "C:\pg_backup\backup1" -c fast --verbose
+pg_basebackup: initiating base backup, waiting for checkpoint to complete
+pg_basebackup: checkpoint completed
+pg_basebackup: write-ahead log start point: 0/29000028 on timeline 1
+pg_basebackup: starting background WAL receiver
+pg_basebackup: created temporary replication slot "pg_basebackup_10356"
+pg_basebackup: write-ahead log end point: 0/29000158
+pg_basebackup: waiting for background process to finish streaming ...
+pg_basebackup: syncing data to disk ...
+pg_basebackup: renaming backup_manifest.tmp to backup_manifest
+pg_basebackup: base backup completed
+PS D:\edbpg17\bin> .\psql.exe -U postgres -p 5433
+psql (17.6.0)
+WARNING: Console code page (437) differs from Windows code page (1252)
+         8-bit characters might not work correctly. See psql reference
+         page "Notes for Windows users" for details.
+Type "help" for help.
+
+postgres=# CREATE TABLE backup_test(id INT);
+CREATE TABLE
+postgres=# INSERT INTO backup_test VALUES (1), (2), (3);
+INSERT 0 3
+postgres=#
+postgres=# pg_basebackup -U postgres -p 5433 -D "C:\pg_backup\backup2_incr" -i "C:\pg_backup\backup1\backup_manifest" -c fast --verbose
+postgres-# \q
+
+PS D:\edbpg17\bin> .\pg_basebackup.exe -U postgres -p 5433 -D "C:\pg_backup\backup2_incr" -i "C:\pg_backup\backup1\backup_manifest" -c fast --verbose
+pg_basebackup: initiating base backup, waiting for checkpoint to complete
+pg_basebackup: checkpoint completed
+pg_basebackup: write-ahead log start point: 0/2B000028 on timeline 1
+pg_basebackup: starting background WAL receiver
+pg_basebackup: created temporary replication slot "pg_basebackup_18268"
+pg_basebackup: write-ahead log end point: 0/2B000158
+pg_basebackup: waiting for background process to finish streaming ...
+pg_basebackup: syncing data to disk ...
+pg_basebackup: renaming backup_manifest.tmp to backup_manifest
+pg_basebackup: base backup completed
+
+PS D:\edbpg17\bin>  .\pg_combinebackup.exe -o "C:\pg_backup\restore2" "C:\pg_backup\backup1" "C:\pg_backup\backup2_incr"
+PS D:\edbpg17\bin> Get-Content "C:\pg_backup\backup2_incr\backup_label"
+START WAL LOCATION: 0/2B000028 (file 00000001000000000000002B)
+CHECKPOINT LOCATION: 0/2B000080
+BACKUP METHOD: streamed
+BACKUP FROM: primary
+START TIME: 2025-11-12 17:54:31 IST
+LABEL: pg_basebackup base backup
+START TIMELINE: 1
+INCREMENTAL FROM LSN: 0/29000028
+INCREMENTAL FROM TLI: 1
+PS D:\edbpg17\bin> .\pg_ctl.exe -D "C:/pg_backup/restore2" status
+pg_ctl: no server running
+PS D:\edbpg17\bin> .\pg_ctl.exe -D "C:/pg_backup/restore2" start
+waiting for server to start....2025-11-12 18:03:49 IST LOG:  redirecting log output to logging collector process
+2025-11-12 18:03:49 IST HINT:  Future log output will appear in directory "log".
+..... done
+server started
+PS D:\edbpg17\bin> .\psql.exe -U postgres -p 5433
+psql (17.6.0)
+WARNING: Console code page (437) differs from Windows code page (1252)
+         8-bit characters might not work correctly. See psql reference
+         page "Notes for Windows users" for details.
+Type "help" for help.
+
+postgres=# \dt
+             List of relations
+  Schema  |    Name     | Type  |  Owner
+----------+-------------+-------+----------
+ postgres | backup_test | table | postgres
+ postgres | ramdb       | table | postgres
+ public   | dept        | table | postgres
+ public   | emp         | table | postgres
+ public   | jobhist     | table | postgres
+(5 rows)
+
+
+postgres=# show data_directory;
+    data_directory
+-----------------------
+ C:/pg_backup/restore2
+(1 row)
+
+
+postgres=# exit
+PS D:\edbpg17\bin> .\psql.exe -U postgres -p 5433
+
+
+
+
+
+
+
+----take another backup incremental backup
+
+
+postgres=# \q
+PS D:\edbpg17\bin> .\pg_ctl.exe -D "C:/pg_backup/restore2" stop
+waiting for server to shut down.... done
+server stopped
+PS D:\edbpg17\bin> .\psql.exe -U postgres -p 5433
+psql: error: connection to server at "localhost" (::1), port 5433 failed: Connection refused (0x0000274D/10061)
+        Is the server running on that host and accepting TCP/IP connections?
+connection to server at "localhost" (127.0.0.1), port 5433 failed: Connection refused (0x0000274D/10061)
+        Is the server running on that host and accepting TCP/IP connections?
+PS D:\edbpg17\bin> .\psql.exe -U postgres -p 5433
+psql (17.6.0)
+WARNING: Console code page (437) differs from Windows code page (1252)
+         8-bit characters might not work correctly. See psql reference
+         page "Notes for Windows users" for details.
+Type "help" for help.
+
+postgres=# \dt+
+                                         List of relations
+  Schema  |    Name     | Type  |  Owner   | Persistence | Access method |    Size    | Description
+----------+-------------+-------+----------+-------------+---------------+------------+-------------
+ postgres | backup_test | table | postgres | permanent   | heap          | 8192 bytes |
+ postgres | ramdb       | table | postgres | permanent   | heap          | 0 bytes    |
+ public   | dept        | table | postgres | permanent   | heap          | 8192 bytes |
+ public   | emp         | table | postgres | permanent   | heap          | 8192 bytes |
+ public   | jobhist     | table | postgres | permanent   | heap          | 8192 bytes |
+(5 rows)
+
+
+postgres=# select * from backup_test;
+ id
+----
+  1
+  2
+  3
+(3 rows)
+
+
+postgres=# INSERT INTO backup_test VALUES (4), (5), (6);
+INSERT 0 3
+postgres=#
+postgres=#
+postgres=#
+postgres=# \q
+PS D:\edbpg17\bin> .\pg_basebackup.exe -U postgres -p 5433 -D "C:\pg_backup\backup3_incr" -i "C:\pg_backup\backup2_incr\backup_manifest" -c fast --verbose
+pg_basebackup: initiating base backup, waiting for checkpoint to complete
+pg_basebackup: checkpoint completed
+pg_basebackup: write-ahead log start point: 0/2D000028 on timeline 1
+pg_basebackup: starting background WAL receiver
+pg_basebackup: created temporary replication slot "pg_basebackup_32184"
+pg_basebackup: write-ahead log end point: 0/2D000190
+pg_basebackup: waiting for background process to finish streaming ...
+pg_basebackup: syncing data to disk ...
+pg_basebackup: renaming backup_manifest.tmp to backup_manifest
+pg_basebackup: base backup completed
+PS D:\edbpg17\bin> .\pg_combinebackup.exe -o "C:\pg_backup\restore3" "C:\pg_backup\backup1" "C:\pg_backup\backup2_incr" "C:\pg_backup\backup3_incr"
+PS D:\edbpg17\bin> .\pg_ctl.exe -D "C:/pg_backup/restore3" status
+pg_ctl: no server running
+PS D:\edbpg17\bin> .\pg_ctl.exe -D "C:/pg_backup/restore3" start
+waiting for server to start....2025-11-13 12:30:26 IST LOG:  redirecting log output to logging collector process
+2025-11-13 12:30:26 IST HINT:  Future log output will appear in directory "log".
+.... done
+server started
+PS D:\edbpg17\bin> .\psql.exe -U postgres -p 5433
+psql (17.6.0)
+WARNING: Console code page (437) differs from Windows code page (1252)
+         8-bit characters might not work correctly. See psql reference
+         page "Notes for Windows users" for details.
+Type "help" for help.
+
+postgres=# \l
+                                                               List of databases
+   Name    |  Owner   | Encoding | Locale Provider |      Collate       |       Ctype        | ICU | Locale | ICU Rules |   Access privileges
+-----------+----------+----------+-----------------+--------------------+--------------------+-----+--------+-----------+-----------------------
+ cdms3.0   | postgres | UTF8     | libc            | English_India.1252 | English_India.1252 |     |        |           |
+ pem       | postgres | UTF8     | libc            | English_India.1252 | English_India.1252 |     |        |           | postgres=CTc/postgres+
+           |          |          |                 |                    |                    |     |        |           | pem_user=Tc/postgres +
+           |          |          |                 |                    |                    |     |        |           | pem_agent=Tc/postgres
+ postgres  | postgres | UTF8     | libc            | English_India.1252 | English_India.1252 |     |        |           |
+ template0 | postgres | UTF8     | libc            | English_India.1252 | English_India.1252 |     |        |           | =c/postgres          +
+           |          |          |                 |                    |                    |     |        |           | postgres=CTc/postgres
+ template1 | postgres | UTF8     | libc            | English_India.1252 | English_India.1252 |     |        |           | =c/postgres          +
+           |          |          |                 |                    |                    |     |        |           | postgres=CTc/postgres
+(5 rows)
+
+
+postgres=# \dt+
+                                         List of relations
+  Schema  |    Name     | Type  |  Owner   | Persistence | Access method |    Size    | Description
+----------+-------------+-------+----------+-------------+---------------+------------+-------------
+ postgres | backup_test | table | postgres | permanent   | heap          | 8192 bytes |
+ postgres | ramdb       | table | postgres | permanent   | heap          | 0 bytes    |
+ public   | dept        | table | postgres | permanent   | heap          | 8192 bytes |
+ public   | emp         | table | postgres | permanent   | heap          | 8192 bytes |
+ public   | jobhist     | table | postgres | permanent   | heap          | 8192 bytes |
+(5 rows)
+
+
+postgres=# select * from backup_test;
+ id
+----
+  1
+  2
+  3
+  4
+  5
+  6
+(6 rows)
+
+
+postgres=#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
